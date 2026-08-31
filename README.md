@@ -5,19 +5,25 @@ EVM payment rails for [CryptoPoS](https://github.com/dowoop/cryptopos-core) — 
 > ### ⚠ The binding on these rails is the weakest this project supports
 >
 > Unless the host derives a fresh receiving address per sale, all four EVM rails
-> receive at a **static account** and match a payment by amount inside the lock
-> window. That is not merely imprecise, and it fails without an attacker:
+> receive at a **static account**, and settlement credits the **running total**
+> of unclaimed, timely transfers — it settles as soon as that total reaches the
+> invoice. It does **not** match the amount. That is not merely imprecise, and
+> it fails without an attacker:
 >
-> 1. Sale A and sale B use the same address and the same amount.
-> 2. A's customer broadcasts a transaction that does not confirm before A expires.
-> 3. B captures its baseline, and the transaction confirms inside B's window.
-> 4. B sees an unclaimed, timely, sufficient transfer and settles.
-> 5. **B's customer paid nothing.**
+> 1. Sale A and sale B are open at the same address. Their amounts need not match.
+> 2. B's customer pays B's amount.
+> 3. A polls first, sees an unclaimed timely transfer, and its total covers A's invoice.
+> 4. **A settles on B's money** — even if A invoiced a thousandth of it.
+> 5. B, whose customer actually paid, ends `needs-review` credited nothing.
+>
+> Reproduced against these adapters, not theorised: a 1 wei invoice settles on a
+> 10¹⁵ wei transfer. Transfers also **sum**, so making each sale's amount unique
+> is not a remedy.
 >
 > A payment carries a transaction id, so a host that keeps a claimed-transaction
 > set can stop the same transaction being credited twice. Nothing here can tell
-> two sales of the same amount apart. If you accept real money on these rails,
-> derive a per-sale address — the host, not this package, owns that.
+> two concurrent sales apart, whatever their amounts. If you accept real money on
+> these rails, derive a per-sale address — the host, not this package, owns that.
 
 > **Not yet proven through this published wheel.** The adapter has settled
 > real testnet money in the parent project, where it shipped built into
