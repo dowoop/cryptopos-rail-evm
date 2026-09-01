@@ -89,10 +89,18 @@ final.
 
 Both chains receive at a **static account** unless the host derives a fresh
 address per sale, so the default binding is the weakest one this project
-supports: a payment is matched by amount inside the lock window. A payment is
-tied to a transaction id, so a host's claimed-transaction set can stop the same
-transaction being credited twice — but two sales for the same amount at the
-same address are not distinguishable by this rail alone.
+supports: a payment is credited by **running total inside the lock window, not
+by amount match**. Whichever open sale polls first takes whatever unclaimed
+money covers its invoice, so two deposits SUM and giving each sale a unique
+amount is not a remedy — the test is a total, not an equality.
+
+A payment is tied to a transaction id, so a host's claimed-transaction set can
+stop the same transaction being credited twice. It cannot tell two concurrent
+sales at the same address apart.
+
+(This section said "matched by amount inside the lock window" until 2026-08-31.
+That is a stronger claim than the code makes and it is false; the sentence
+survived into a shipped wheel's metadata.)
 
 ## What this package does not decide
 
