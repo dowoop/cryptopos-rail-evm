@@ -1,6 +1,17 @@
 # cryptopos-rail-evm
 
-EVM payment rails for [CryptoPoS](https://github.com/dowoop/cryptopos-core) — Ethereum Sepolia and Polygon Amoy, native coin and ERC-20 — read over plain JSON-RPC.
+EVM payment rails for [cryptopos-core](https://github.com/dowoop/cryptopos-core) — Ethereum Sepolia and Polygon Amoy, native coin and ERC-20 — read over plain JSON-RPC.
+
+They hold **no keys and never spend**. They are watchers: the customer's own
+wallet is the payer, and this package only tells you what the chain says.
+
+```bash
+pip install cryptopos-rail-evm
+```
+
+Installing it *is* the integration — all four rails register themselves through
+the `cryptopos.rails` entry-point group, and a host that calls `discover()`
+finds them with no code change.
 
 > ### ⚠ The binding on these rails is the weakest this project supports
 >
@@ -22,85 +33,186 @@ EVM payment rails for [CryptoPoS](https://github.com/dowoop/cryptopos-core) — 
 >
 > A payment carries a transaction id, so a host that keeps a claimed-transaction
 > set can stop the same transaction being credited twice. Nothing here can tell
-> two concurrent sales apart, whatever their amounts. If you accept real money on
-> these rails, derive a per-sale address — the host, not this package, owns that.
+> two concurrent sales apart, whatever their amounts. **If you accept real money
+> on these rails, [derive a per-sale address](#3-give-every-sale-its-own-address)
+> — the host, not this package, owns that.**
 
-> **Not yet proven through this published wheel.** The adapter has settled
-> real testnet money in the parent project, where it shipped built into
-> `cryptopos-core`. It has not yet settled a payment in this extracted,
-> installed form. This project has four recorded incidents of a green suite
-> over a deployment that could not take a payment, so the distinction is
-> stated rather than glossed.
+> **Not yet proven through this published wheel.** The adapters have settled real
+> testnet money in the parent project, where they shipped built into
+> `cryptopos-core`. They have not yet settled a payment in this extracted,
+> installed form. This project has four recorded incidents of a green suite over
+> a deployment that could not take a payment, so the distinction is stated rather
+> than glossed.
 
 **Not audited.** No external security audit; never used with mainnet funds.
 
-Install it beside `cryptopos-core` and it registers itself through the
-`cryptopos.rails` entry-point group — a host that discovers rails finds it with
-no code change:
-
-```bash
-pip install cryptopos-rail-evm
-```
-
-```python
-from importlib import metadata
-
-for point in metadata.entry_points(group="cryptopos.rails"):
-    rail = point.load()
-    print(point.name, rail.key, sorted(rail.capabilities))
-```
-
-## What it is
-
-A `PaymentRail` implementation: it validates a recipient, builds a payment
-request, observes the chain for arriving money, and returns a settlement
-decision. It holds **no keys and never spends** — every rail here is a watcher,
-and the customer's own wallet is the payer.
-
-Zero runtime dependencies beyond `cryptopos-core`.
-
 ## Rails
 
-| entry point | rail key | maturity gate |
+| entry point | rail key | settles at |
 |---|---|---|
 | `ethereum-sepolia-eth` | `ethereum:sepolia/native:eth` | 3 confirmations |
 | `ethereum-sepolia-usdc` | `ethereum:sepolia/erc20:0x1c7d…7238` | 3 confirmations |
 | `polygon-amoy-pol` | `polygon:amoy/native:pol` | at or below the `finalized` block tag |
 | `polygon-amoy-usdc` | `polygon:amoy/erc20:0x41e9…7582` | at or below the `finalized` block tag |
 
-## The two chains do not settle the same way, and the difference is large
+---
+
+# Cookbook
+
+The five-call sequence, the settlement states, and the four host obligations are
+in [cryptopos-core's cookbook](https://github.com/dowoop/cryptopos-core#the-five-calls).
+This file covers only what is specific to EVM chains.
+
+## 1. Configure it
+
+```python
+configuration = {
+    "endpoint": "https://rpc-amoy.polygon.technology",   # any JSON-RPC HTTPS URL
+    "timeout_seconds": 10,                               # optional, per request
+}
+```
+
+`readiness` verifies the chain id **and exercises the actual method the rail
+needs** — the full-block read for a native rail, the `eth_getLogs` token query
+for an ERC-20 one — not merely `eth_chainId`. A provider that answers the cheap
+call and refuses the expensive one is caught at start-up rather than mid-sale.
+It still cannot prove that a provider is honest.
+
+## 2. Charge a sale
+
+<!-- readme: new -->
+```python
+from cryptopos_core.plugin import PaymentIntent, RecipientBaseline
+from cryptopos_rail_evm import ethereum_sepolia, usdc_polygon_amoy
+
+ethereum_sepolia.key                     # -> 'ethereum:sepolia/native:eth'
+usdc_polygon_amoy.key
+#   -> 'polygon:amoy/erc20:0x41e94eb019c0762f9bfcf9fb1e58725bfb0e7582'
+```
+
+The rail key carries the token contract, so a USDC rail and an ETH rail on the
+same chain are different rails and can never be confused for one another. A
+sale's rail key pins the contract for the life of that sale.
+
+```python
+address = "0x4B7115aD9623A528f1845eaf85D166dE1E869BFB"
+
+def intent_for(rail, amount_native):
+    baseline = RecipientBaseline(rail.key, address, "json-rpc", tip=100)
+    return PaymentIntent("sale-1042", rail.key, address, amount_native,
+                         1_787_100_000, 1_787_101_800, baseline=baseline)
+
+ethereum_sepolia.create_request(intent_for(ethereum_sepolia, 125_000)).uri
+#   -> 'ethereum:0x4B7115aD9623A528f1845eaf85D166dE1E869BFB@11155111?value=125000'
+```
+
+That is [ERC-681](https://eips.ethereum.org/EIPS/eip-681), and note two things.
+The chain id is **in the URI** (`@11155111`), so unlike BIP-21 the payer's
+wallet cannot pay it on the wrong network. And the amount is the **integer
+native** amount — wei, not ether. Sending the decimal form here is not a
+rounding difference, it is off by 10¹⁸.
+
+A token payment looks quite different, and the difference matters:
+
+```python
+usdc_polygon_amoy.create_request(intent_for(usdc_polygon_amoy, 125_000)).uri
+#   -> 'ethereum:0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582@80002/transfer?address=0x4B7115aD9623A528f1845eaf85D166dE1E869BFB&uint256=125000'
+```
+
+The URI targets the **token contract**, and the merchant is a parameter of a
+`transfer` call. Your receiving address appears in the query string, not as the
+URI's subject. A reviewer eyeballing the URI for "my address" will not find it
+where they expect it — that is correct, not a bug.
+
+Against a live endpoint:
+
+<!-- readme: skip -->
+```python
+baseline = rail.capture_baseline(address, configuration)
+batch = rail.observe(intent, configuration)
+while not batch.complete:                       # EVM rails genuinely page
+    batch = rail.observe(intent, configuration, batch)
+decision = rail.settle(intent, batch, claimed_transaction_ids=already_credited)
+```
+
+**The loop is not optional here.** EVM reads are bounded by block range, so
+`observe` returns a cumulative batch and resumes from it until the provider's
+tip has been covered. Settling on the first batch settles on a fraction of the
+window. Once a batch reports `complete`, start the *next* poll without it, so
+the rail revalidates the current canonical chain instead of carrying a stale
+snapshot forward.
+
+## 3. Give every sale its own address
+
+This is the remedy for the warning at the top of this file, and it is the host's
+job. `cryptopos-core` ships watch-only BIP-32 derivation:
+
+```python
+from cryptopos_core import hd
+
+XPUB = ("xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJ"
+        "oCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8")
+
+account = hd.parse_extended_key(XPUB)
+
+def address_for_sale(index):
+    """One fresh receiving address per sale, from a key that cannot spend."""
+    return hd.evm_address(hd.derive_path(account, f"0/{index}"))
+
+address_for_sale(0)                      # -> '0x4B7115aD9623A528f1845eaf85D166dE1E869BFB'
+address_for_sale(1)                      # -> '0xEb5A8aE75e395Ef05c96839a3FB088B2f65E7662'
+```
+
+Addresses come back in [EIP-55](https://eips.ethereum.org/EIPS/eip-55) mixed-case
+checksum form. Store the index on the sale; never reuse one.
+
+The module accepts extended **public** keys only — no private derivation, no
+signing operation — so a host deriving addresses this way still holds nothing
+that can spend:
+
+<!-- readme: raises -->
+```python
+hd.parse_extended_key("xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi")   # InvalidExtendedKey - a private key has no business here
+```
+
+Unlike the Bitcoin rail, **nothing in this package refuses a reused address**.
+EVM accounts have history by design and an account that has been paid before is
+not anomalous, so there is no equivalent of the Bitcoin history check to lean
+on. The per-sale address is the whole of your binding.
+
+## 4. The two chains do not settle the same way, and the difference is large
 
 Polygon settles on the **`finalized` block tag**, which cannot be reorganised
 away. Measured on Amoy, the finalized head trails the tip by about **one block,
 one second**, so that guarantee costs essentially nothing.
 
 Ethereum cannot do the same. Sepolia's finalized head trails the tip by about
-**82 blocks — seventeen minutes** — which is longer than a fifteen-minute price
-lock, so gating on it would fail honest, immediately-paid sales permanently.
-The Sepolia rails therefore settle at **three confirmations**, and a sale booked
-that way *can* be reorganised away afterwards. That exposure is structural: it
-is a property of the chain against a point-of-sale timing budget, and no amount
-of care in this adapter removes it.
+**82 blocks — seventeen minutes** — longer than a fifteen-minute price lock, so
+gating on it would permanently fail honest, immediately-paid sales. The Sepolia
+rails therefore settle at **three confirmations**, and a sale booked that way
+*can* be reorganised away afterwards. That exposure is structural: a property of
+the chain against a point-of-sale timing budget, and no amount of care in this
+adapter removes it.
 
-Prefer the Polygon-class rails where you need settlement that is both fast and
-final.
+**Prefer the Polygon-class rails where you need settlement that is both fast and
+final.**
 
-## Binding
+## Binding, precisely
 
 Both chains receive at a **static account** unless the host derives a fresh
-address per sale, so the default binding is the weakest one this project
-supports: a payment is credited by **running total inside the lock window, not
-by amount match**. Whichever open sale polls first takes whatever unclaimed
-money covers its invoice, so two deposits SUM and giving each sale a unique
-amount is not a remedy — the test is a total, not an equality.
+address per sale, so the default binding is the weakest this project supports: a
+payment is credited by **running total inside the lock window, not by amount
+match**. Whichever open sale polls first takes whatever unclaimed money covers
+its invoice; two deposits SUM, so giving each sale a unique amount is not a
+remedy — the test is a total, not an equality.
 
-A payment is tied to a transaction id, so a host's claimed-transaction set can
-stop the same transaction being credited twice. It cannot tell two concurrent
-sales at the same address apart.
+A payment is tied to a transaction id, so a host's claimed-transaction set stops
+the same transaction being credited twice. It cannot tell two concurrent sales
+at the same address apart.
 
-(This section said "matched by amount inside the lock window" until 2026-08-31.
+*(This section said "matched by amount inside the lock window" until 2026-08-31.
 That is a stronger claim than the code makes and it is false; the sentence
-survived into a shipped wheel's metadata.)
+survived into a shipped wheel's metadata.)*
 
 ## What this package does not decide
 
@@ -113,6 +225,7 @@ what is true about the chain.
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -t .
+python3 tools/readme.py --wheel   # every example above, against the wheel
 ```
 
 No test in this package opens a socket.

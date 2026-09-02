@@ -1,6 +1,6 @@
 [project]
 name = "cryptopos-rail-evm"
-version = "0.1.0"
+version = "0.1.1"
 description = "Dependency-free EVM payment rails (Sepolia and Amoy, native and ERC-20) for CryptoPoS."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -47,7 +47,9 @@ build-backend = "hatchling.build"
 packages = ["src/cryptopos_rail_evm"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/", "tests/", "pyproject.toml", "README.md", "LICENSE"]
+# `tools/` ships so that a cloner can run the README gate this package's
+# own testing section tells them to run.
+include = ["src/", "tests/", "tools/", "pyproject.toml", "README.md", "LICENSE"]
 
 [tool.ruff]
 line-length = 110
