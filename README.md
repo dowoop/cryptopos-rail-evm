@@ -164,7 +164,29 @@ address_for_sale(1)                      # -> '0xEb5A8aE75e395Ef05c96839a3FB088B
 ```
 
 Addresses come back in [EIP-55](https://eips.ethereum.org/EIPS/eip-55) mixed-case
-checksum form. Store the index on the sale; never reuse one.
+checksum form.
+
+**Derive from the account key**, not the master key — the xpub a wallet exports
+for `m/44'/60'/0'`, so `0/index` is its external chain. The example above uses a
+BIP-32 test vector's master key, which is convenient for a checkable example and
+wrong for a real deployment.
+
+**An index is spent the moment it is shown, and can never be reused.** A
+payment instruction cannot be withdrawn: a customer who kept an old QR can pay
+it tomorrow, and if that address now belongs to another sale, that sale settles
+on their money. No cooldown helps. **And here you have no backstop at all** —
+the Bitcoin rail refuses a recipient that already has transaction history, so
+it at least catches reuse of a *paid* address. EVM accounts have history by
+design, so there is no anomaly for this package to detect and nothing will stop
+you. The discipline is entirely yours.
+
+**Keep the allocation counter durable, and mind the gap limit.** Never reusing
+means abandoned checkouts consume indices, while a wallet restoring from the
+seed scans only until it meets a run of unused addresses — commonly **20**,
+BIP-44's gap limit. Keep the watching wallet's limit above your realistic run
+of unpaid sales, persist the next-index counter across restarts, and apply
+backpressure if you cannot. Reconcile late payments by transaction id rather
+than assuming they cannot happen.
 
 The module accepts extended **public** keys only — no private derivation, no
 signing operation — so a host deriving addresses this way still holds nothing
