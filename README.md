@@ -6,8 +6,13 @@ They hold **no keys and never spend**. They are watchers: the customer's own
 wallet is the payer, and this package only tells you what the chain says.
 
 ```bash
-pip install cryptopos-rail-evm
+pip install git+https://github.com/dowoop/cryptopos-core
+pip install git+https://github.com/dowoop/cryptopos-rail-evm
 ```
+
+**Not on PyPI yet**, so `pip install cryptopos-rail-evm` does not resolve — the repository is the
+distribution until the name is registered. Core comes first: this package declares
+`cryptopos-core>=2,<3` and there is no index for pip to satisfy that from.
 
 Installing it *is* the integration — all four rails register themselves through
 the `cryptopos.rails` entry-point group, and a host that calls `discover()`
