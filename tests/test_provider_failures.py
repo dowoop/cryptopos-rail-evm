@@ -99,6 +99,16 @@ class JsonRpcTransportFailures(unittest.TestCase):
 		self.assertEqual((request.method, request.full_url, timeout), ("POST", ENDPOINT, 2))
 		self.assertEqual(opener.response.read_limit, 3)
 
+	def test_default_transport_identifies_the_rail_and_package_version(self):
+		opener = Opener(Response(b"{}"))
+		with mock.patch("urllib.request.build_opener", return_value=opener):
+			evm._JsonRpcTransport().post(ENDPOINT, b"{}", 2, 2)
+		request, _timeout = opener.requests[0]
+		self.assertEqual(
+			request.get_header("User-agent"),
+			f"cryptopos-rail-evm/{evm.__version__}",
+		)
+
 	def test_default_transport_refuses_oversize_body(self):
 		transport = evm._JsonRpcTransport.__new__(evm._JsonRpcTransport)
 		transport._opener = Opener(Response(b"abc"))

@@ -63,6 +63,12 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 		return None
 
 
+def _default_user_agent():
+	from . import __version__
+
+	return f"cryptopos-rail-evm/{__version__}"
+
+
 class _JsonRpcTransport:
 	def __init__(self):
 		self._opener = urllib.request.build_opener(_NoRedirect, urllib.request.ProxyHandler({}))
@@ -74,7 +80,7 @@ class _JsonRpcTransport:
 			headers={
 				"Accept": "application/json",
 				"Content-Type": "application/json",
-				"User-Agent": "cryptopos-core/1",
+				"User-Agent": _default_user_agent(),
 			},
 			method="POST",
 		)
