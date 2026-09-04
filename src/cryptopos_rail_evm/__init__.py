@@ -6,13 +6,11 @@ transaction is credited only after its receipt reports success. The adapter
 polls blocks/logs for truth; it does not claim a mempool view it does not have.
 """
 
-# The distribution version, declared here because a moved module asks for
-# it. `chain._default_user_agent` does `from . import __version__` to name
-# itself to an indexer, and when this code lived in cryptopos-core that
-# resolved to core's version. It now resolves to this package's, which is
-# the honest answer: the operator of an endpoint being polled should be told
-# which rail is polling it, not which protocol library it links against.
-__version__ = "0.1.0"
+# The distribution version is declared here as the single source of truth.
+# It previously also appeared as a literal in pyproject.toml, and those two
+# declarations drifted apart by a patch release; Hatch now derives the
+# distribution metadata from this module string.
+__version__ = "0.1.1"
 
 
 import json
